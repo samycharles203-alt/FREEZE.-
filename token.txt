@@ -1,5 +1,5 @@
 {
-"8183684693:AAGO1OeZN3i6JuLhvzDxWhuYNcgnhc135l8": [
+"tokens": [
 "8183684693:AAGO1OeZN3i6JuLhvzDxWhuYNcgnhc135l8"
 ]
 }
