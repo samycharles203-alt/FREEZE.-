@@ -4,7 +4,7 @@ let quizAutoInterval = null;
 let currentQuiz = null;
 let scores = {}; // {id: {name, points}}
 
-// API traduction gratuite (LibreTranslate)
+// Traduction en français via LibreTranslate
 async function translateToFr(text) {
     try {
         const res = await axios.post('https://libretranslate.com/translate', {
@@ -28,15 +28,15 @@ module.exports = {
         category: 'fun',
         aliases: ['trivia'],
         author: 'Samycharles',
-        version: '0.0.3',
-        description: 'Quiz interactif avec boutons A/B/C et traduction'
+        version: '0.0.4',
+        description: 'Quiz interactif en français avec boutons qui envoient la commande'
     },
 
     async onStart({ bot, chatId }) {
         const buttons = [
-            [{ text: "🕹 Quiz maintenant", callback_data: "quiz_now" }],
-            [{ text: "⚡ Quiz Auto ON", callback_data: "quiz_auto_on" }],
-            [{ text: "⏹ Quiz OFF", callback_data: "quiz_auto_off" }]
+            [{ text: "🕹 Quiz maintenant", switch_inline_query_current_chat: "quiz now" }],
+            [{ text: "⚡ Quiz Auto ON", switch_inline_query_current_chat: "quiz auto on" }],
+            [{ text: "⏹ Quiz OFF", switch_inline_query_current_chat: "quiz auto off" }]
         ];
 
         await bot.sendMessage(chatId, "🎉 Bienvenue au Quiz Nix ! Choisissez une option :", {
@@ -54,37 +54,33 @@ async function fetchQuestion() {
     const correct = decodeURIComponent(q.correct_answer);
     const incorrects = q.incorrect_answers.map(a => decodeURIComponent(a));
     let options = [correct, ...incorrects].sort(() => Math.random() - 0.5);
-
     return { question: decodeURIComponent(q.question), options, answer: correct };
 }
 
-// --- Envoi quiz avec boutons ---
+// --- Envoi d’une question avec boutons A/B/C ---
 async function sendQuiz(bot, chatId) {
-    let quiz = await fetchQuestion();
+    const quiz = await fetchQuestion();
 
-    // Traduction en français
+    // Traduction FR
     quiz.question = await translateToFr(quiz.question);
-    quiz.options = await Promise.all(quiz.options.slice(0,3).map(async o => await translateToFr(o)));
+    quiz.options = await Promise.all(quiz.options.slice(0,3).map(o => translateToFr(o)));
     quiz.answer = await translateToFr(quiz.answer);
 
     currentQuiz = quiz;
 
-    // Créer boutons A/B/C
     const labels = ['A','B','C'];
     const buttons = quiz.options.map((opt, i) => [{ text: labels[i], callback_data: `quiz_answer_${labels[i]}` }]);
 
-    // Message avec options écrites
     let text = `❓ ${quiz.question}\n\n`;
     for (let i = 0; i < 3; i++) text += `${labels[i]}: ${quiz.options[i]}\n`;
     text += `\n⏳ Vous avez 15 secondes pour répondre !`;
 
     await bot.sendMessage(chatId, text, { reply_markup: { inline_keyboard: buttons } });
 
-    // Timer 15s
     setTimeout(() => {
         if (currentQuiz === quiz) {
             currentQuiz = null;
-            bot.sendMessage(chatId, "🕰️ Temps écoulé ! Personne n'a répondu. La prochaine question arrive bientôt.");
+            bot.sendMessage(chatId, "🕰️ Temps écoulé ! Personne n'a répondu.");
         }
     }, 15000);
 }
@@ -95,25 +91,6 @@ if (global.bot) {
         const chatId = query.message.chat.id;
         const userId = query.from.id;
         const username = query.from.first_name || query.from.username || "Utilisateur";
-
-        // Boutons du menu principal
-        if (query.data === "quiz_now") {
-            sendQuiz(global.bot, chatId);
-            await global.bot.answerCallbackQuery(query.id);
-            return;
-        }
-        if (query.data === "quiz_auto_on") {
-            if (quizAutoInterval) return global.bot.answerCallbackQuery(query.id, { text: "⚡ Quiz auto déjà activé !" });
-            quizAutoInterval = setInterval(() => sendQuiz(global.bot, chatId), 30000);
-            await global.bot.answerCallbackQuery(query.id, { text: "⚡ Quiz auto activé !" });
-            return;
-        }
-        if (query.data === "quiz_auto_off") {
-            clearInterval(quizAutoInterval);
-            quizAutoInterval = null;
-            await global.bot.answerCallbackQuery(query.id, { text: "⏹ Quiz auto désactivé !" });
-            return;
-        }
 
         // Réponse A/B/C
         if (query.data.startsWith("quiz_answer_") && currentQuiz) {
@@ -136,4 +113,4 @@ if (global.bot) {
             await global.bot.answerCallbackQuery(query.id);
         }
     });
-      }
+        }
