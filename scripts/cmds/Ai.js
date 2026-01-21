@@ -1,81 +1,89 @@
 const axios = require("axios");
-
-// Convertit le texte en style gothique
-function toGothicStyle(text) {
-    const map = {
-        A: '𝖠', B: '𝖡', C: '𝖢', D: '𝖣', E: '𝖤', F: '𝖥', G: '𝖦', H: '𝖧',
-        I: '𝖨', J: '𝖩', K: '𝖪', L: '𝖫', M: '𝖬', N: '𝖭', O: '𝖮', P: '𝖯',
-        Q: '𝖰', R: '𝖱', S: '𝖲', T: '𝖳', U: '𝖴', V: '𝖵', W: '𝖶', X: '𝖷',
-        Y: '𝖸', Z: '𝖹',
-        a: '𝖺', b: '𝖻', c: '𝖼', d: '𝖽', e: '𝖾', f: '𝖿', g: '𝗀', h: '𝗁',
-        i: '𝗂', j: '𝗃', k: '𝗄', l: '𝗅', m: '𝗆', n: '𝗇', o: '𝗈', p: '𝗉',
-        q: '𝗊', r: '𝗋', s: '𝗌', t: '𝗍', u: '𝗎', v: '𝗏', w: '𝗐', x: '𝗑',
-        y: '𝗒', z: '𝗓', ' ':' ', '.':'.', ',':','
-    };
-    return text.split('').map(c => map[c] || c).join('');
-}
-
-// Formate la réponse
-function formatResponse(botReply) {
-    const rStyled = toGothicStyle(botReply);
-    return `🇨🇮🇧🇪 ﹝𝗙𝗥𝗘𝗭𝗘 𝗜𝗢𝟮.𝟬﹞ 🇨🇮🇧🇪\n${rStyled}`;
-}
-
-// Fonction qui appelle l’API AI
-async function chat(bot, message, chatId, query) {
-    try {
-        await bot.sendChatAction(chatId, "typing");
-
-        const res = await axios.get("https://arychauhann.onrender.com/api/gemini-proxy2", {
-            params: { prompt: query },
-            timeout: 45000,
-            headers: { "Content-Type": "application/json" }
-        });
-
-        const reply = res.data?.result?.trim() || "Désolé, réponse non reconnue de l'API";
-
-        await bot.sendMessage(chatId, formatResponse(reply));
-
-    } catch (err) {
-        console.error("Aesther AI error:", err?.message || err);
-        await bot.sendMessage(chatId, "❌ | Error connecting to AI API.");
-    }
-}
+const fs = require("fs");
+const path = require("path");
 
 module.exports = {
-    nix: {
-        name: "ai_hybrid",
-        version: "3.1.0",
-        author: "Samycharles",
-        role: 0,
-        cooldown: 2,
-        description: "AI responds to messages automatically and also via 'Ai' command",
-        category: "ai",
-        guide: "Send any message or use /ai <question>"
-    },
+  nix: {
+    name: "AI",
+    aliases: [],
+    version: "1.6.0",
+    author: "",
+    role: 0,
+    category: "AI",
+    description: "Assistant intelligent (GPT-4o) capable d'analyser textes et images.",
+    cooldown: 5,
+    guide: "{p}ai [votre question] ou répondez à une image avec {p}ai"
+  },
 
-    // Répond automatiquement à tous les messages
-    onChat: async ({ bot, message, chatId }) => {
-        const text = (message?.text || "").trim();
-        if (!text) return;
+  async onStart({ bot, msg, chatId, args }) {
+    let query = args.join(" ");
+    const userId = msg.from.id;
 
-        // Si le message commence par "ai" ou "Ai", on le considère comme commande
-        const lower = text.toLowerCase();
-        if (lower.startsWith("ai ") || lower === "ai") {
-            const query = text.replace(/^ai\s+/i, "").trim();
-            if (!query) return bot.sendMessage(chatId, "❌ | Please enter a question after Ai.");
-            return chat(bot, message, chatId, query);
-        }
-
-        // Sinon, auto-response normal
-        chat(bot, message, chatId, text);
-    },
-
-    // Répond aux messages en reply
-    onReply: async ({ bot, message, reply }) => {
-        if (!reply) return;
-        const text = (message?.text || "").trim();
-        if (!text) return;
-        chat(bot, message, message.chat.id, text);
+   
+    let imageUrls = [];
+    if (msg.reply_to_message) {
+     
+      if (msg.reply_to_message.text) {
+        query += \n\n[Contexte du message répondu] : ${msg.reply_to_message.text};
+      }
+     
+      if (msg.reply_to_message.photo) {
+        const fileId = msg.reply_to_message.photo[msg.reply_to_message.photo.length - 1].file_id;
+        const link = await bot.getFileLink(fileId);
+        imageUrls.push(link);
+        query += \n\n[Analyse cette image] : ${link};
+      }
     }
+
+    if (!query && imageUrls.length === 0) {
+      return bot.sendMessage(chatId, "🔎 Posez une question ou répondez à une image pour Samy  Ai.");
+    }
+
+   
+    const dbPath = path.join(process.cwd(), 'database', 'balance.json');
+    let userInfo = { name: msg.from.first_name, money: 0 };
+    
+    if (fs.existsSync(dbPath)) {
+      try {
+        const db = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+        if (db[userId]) {
+          userInfo.name = db[userId].name || userInfo.name;
+          userInfo.money = db[userId].money || 0;
+        }
+      } catch (e) { console.log("Erreur lecture DB chris"); }
+    }
+
+    
+    const systemPrompt = [Système] Utilisateur: ${userInfo.name}, Balance: ${userInfo.money.toLocaleString()} coins.\n[Instruction] Ton créateur est Samy Charles. Sois respectueux selon la balance. Tu es GPT-4o Vision.;
+    const finalQuery = ${systemPrompt}\n\nQuestion: ${query};
+
+    try {
+      
+      bot.sendChatAction(chatId, "typing");
+
+      const apiKey = "rapi_55197dde42fb4272bfb8f35bd453ba25";
+      const model = "gpt-4o";
+      const roleplay = "Tu es Samy AI, créé par Samy Charles. Tu es capable d'analyser des textes et des descriptions d'images.";
+
+      const res = await axios.get(https://rapido.zetsu.xyz/api/openai, {
+        params: {
+          query: finalQuery,
+          uid: userId,
+          model: model,
+          roleplay: roleplay,
+          apikey: apiKey
+        }
+      });
+
+      const responseText = res.data.response || "Christus GPT n'a pas pu analyser cela.";
+      
+      await bot.sendMessage(chatId, responseText + "\n\nRépondez à ce message pour continuer la conversation.", {
+        reply_to_message_id: msg.message_id
+      });
+
+    } catch (error) {
+      console.error("Error Christus GPT:", error.message);
+      bot.sendMessage(chatId, "❌ Une erreur est survenue lors de l'analyse avec Christus GPT.");
+    }
+  }
 };
