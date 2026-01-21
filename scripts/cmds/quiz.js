@@ -1,164 +1,139 @@
-const axios = require("axios");
-const fs = require('fs');
-const path = require('path');
+const axios = require('axios');
 
-const nix = {
-  name: "quiz",
-  version: "0.0.1",
-  aliases: ["qz"],
-  description: "Play a quiz game to earn coins.",
-  author: "ArYAN", 
-  prefix: false,
-  category: "game",
-  role: 0,
-  cooldown: 5,
-  guide: "Start a quiz: {p}quiz [bn/en]\nExample: {p}quiz bn or {p}quiz en",
-};
+let quizAutoInterval = null;
+let currentQuiz = null;
+let scores = {}; // {id: {name, points}}
 
-async function onStart({ bot, message, msg, chatId, args, usages }) {
-  const input = args[0] ? args[0].toLowerCase() : "bn";
-  let category = "bangla";
-  const quizTimeout = 30;
-
-  if (input === "bn" || input === "bangla") {
-    category = "bangla";
-  } else if (input === "en" || input === "english") {
-    category = "english";
-  } else {
-    return usages();
-  }
-
-  try {
-    const response = await axios.get(`https://nix-quizv2.onrender.com/quiz?category=${category}&q=random`);
-
-    const quizData = response.data.question;
-    const { question, correctAnswer, options } = quizData;
-    const { a, b, c, d } = options;
-
-    const quizMsgBody = `
-\n╭──✦ ${question}
-├‣ 𝗔) ${a}
-├‣ 𝗕) ${b}
-├‣ 𝗖) ${c}
-├‣ 𝗗) ${d}
-╰──────────────────‣
-Reply to this message with your answer. You have ${quizTimeout} seconds.
-    `.trim();
-
-    const sentMessage = await bot.sendMessage(
-      chatId,
-      quizMsgBody, {
-        reply_to_message_id: msg.message_id,
-        parse_mode: "Markdown"
-      }
-    );
-
-    global.teamnix.replies.set(sentMessage.message_id, {
-      nix,
-      type: "quiz_reply",
-      authorId: msg.from.id,
-      correctAnswer: correctAnswer.toLowerCase(),
-      attempts: 0,
-      originalMessageId: sentMessage.message_id,
-      chatId: chatId,
-    });
-
-    setTimeout(async () => {
-      const replyData = global.teamnix.replies.get(sentMessage.message_id);
-      if (replyData) {
-        global.teamnix.replies.delete(sentMessage.message_id);
-        
-        await bot.deleteMessage(sentMessage.chat.id, sentMessage.message_id)
-          .catch(console.error);
-        await bot.sendMessage(
-          chatId,
-          `🕰️ Time's up! The quiz for "${question}" has ended. The correct answer was: **${correctAnswer}**`, {
-            reply_to_message_id: msg.message_id,
-            parse_mode: "Markdown"
-          }
-        ).catch(console.error);
-        
-      }
-    }, quizTimeout * 1000);
-
-  } catch (error) {
-    console.error("❌ | Error occurred during quiz start:", error);
-    await message.reply("An error occurred while fetching the quiz. Please try again later.");
-  }
-}
-
-async function onReply({ bot, message, msg, chatId, userId, args, data, replyMsg }) {
-  if (data.type !== "quiz_reply" || userId !== data.authorId) {
-    return bot.sendMessage(chatId, "This reply is not for the active quiz or you are not the quiz initiator.", {
-      reply_to_message_id: msg.message_id
-    });
-  }
-
-  const maxAttempts = 2;
-
-  if (data.attempts >= maxAttempts) {
-    await bot.sendMessage(
-      chatId,
-      `🚫 You've reached the maximum number of attempts (${maxAttempts}). The correct answer was: **${data.correctAnswer}**`, {
-        reply_to_message_id: msg.message_id,
-        parse_mode: "Markdown"
-      }
-    );
-    
-    await bot.deleteMessage(data.chatId, data.originalMessageId).catch(console.error);
-    global.teamnix.replies.delete(replyMsg.message_id);
-    return;
-  }
-
-  const userReply = msg.text ? msg.text.toLowerCase().trim() : "";
-
-  if (userReply === data.correctAnswer) {
-    const rewardCoins = 300;
-    const rewardExp = 100;
-
-    const dataPath = path.join(process.cwd(), 'database', 'balance.json');
-    const getBalanceData = () => {
-      if (!fs.existsSync(dataPath)) {
-          fs.writeFileSync(dataPath, JSON.stringify({}));
-      }
-      return JSON.parse(fs.readFileSync(dataPath, 'utf8'));
-    };
-
-    const saveData = (data) => {
-        fs.writeFileSync(dataPath, JSON.stringify(data, null, 2));
-    };
-
-    let balances = getBalanceData();
-    if (!balances[userId]) {
-        balances[userId] = { money: 0 };
+// API traduction gratuite (LibreTranslate)
+async function translateToFr(text) {
+    try {
+        const res = await axios.post('https://libretranslate.com/translate', {
+            q: text,
+            source: 'en',
+            target: 'fr',
+            format: 'text'
+        });
+        return res.data.translatedText;
+    } catch (err) {
+        console.error("Translation error:", err.message);
+        return text;
     }
-    balances[userId].money += rewardCoins;
-    saveData(balances);
-    
-    await bot.sendMessage(
-      chatId,
-      `Congratulations, ${msg.from.first_name}! 🌟🎉\n\nYou're a Quiz Champion! 🏆\n\nYou've earned ${rewardCoins} Coins 💰 and ${rewardExp} EXP 🌟\n\nYour new balance is ${balances[userId].money} Coins.\n\nKeep up the great work! 🚀`, {
-        reply_to_message_id: msg.message_id,
-        parse_mode: "Markdown"
-      }
-    );
- 
-    await bot.deleteMessage(data.chatId, data.originalMessageId).catch(console.error);
-    global.teamnix.replies.delete(replyMsg.message_id);
-  } else {
-    data.attempts += 1;
-    global.teamnix.replies.set(replyMsg.message_id, data);
-    await bot.sendMessage(
-      chatId,
-      `❌ Wrong Answer. You have ${maxAttempts - data.attempts} attempts left.\n✅ Try Again!`, {
-        reply_to_message_id: msg.message_id
-      }
-    );
-  }
 }
 
 module.exports = {
-  onStart,
-  onReply,
-  nix
+    nix: {
+        name: 'quiz',
+        prefix: false,
+        role: 0,
+        category: 'fun',
+        aliases: ['trivia'],
+        author: 'Samycharles',
+        version: '0.0.3',
+        description: 'Quiz interactif avec boutons A/B/C et traduction'
+    },
+
+    async onStart({ bot, chatId }) {
+        const buttons = [
+            [{ text: "🕹 Quiz maintenant", callback_data: "quiz_now" }],
+            [{ text: "⚡ Quiz Auto ON", callback_data: "quiz_auto_on" }],
+            [{ text: "⏹ Quiz OFF", callback_data: "quiz_auto_off" }]
+        ];
+
+        await bot.sendMessage(chatId, "🎉 Bienvenue au Quiz Nix ! Choisissez une option :", {
+            reply_markup: { inline_keyboard: buttons }
+        });
+    }
 };
+
+// --- Récupérer question anglaise ---
+async function fetchQuestion() {
+    const res = await axios.get('https://opentdb.com/api.php', {
+        params: { amount: 1, type: 'multiple', category: 9, encode: 'url3986' }
+    });
+    const q = res.data.results[0];
+    const correct = decodeURIComponent(q.correct_answer);
+    const incorrects = q.incorrect_answers.map(a => decodeURIComponent(a));
+    let options = [correct, ...incorrects].sort(() => Math.random() - 0.5);
+
+    return { question: decodeURIComponent(q.question), options, answer: correct };
+}
+
+// --- Envoi quiz avec boutons ---
+async function sendQuiz(bot, chatId) {
+    let quiz = await fetchQuestion();
+
+    // Traduction en français
+    quiz.question = await translateToFr(quiz.question);
+    quiz.options = await Promise.all(quiz.options.slice(0,3).map(async o => await translateToFr(o)));
+    quiz.answer = await translateToFr(quiz.answer);
+
+    currentQuiz = quiz;
+
+    // Créer boutons A/B/C
+    const labels = ['A','B','C'];
+    const buttons = quiz.options.map((opt, i) => [{ text: labels[i], callback_data: `quiz_answer_${labels[i]}` }]);
+
+    // Message avec options écrites
+    let text = `❓ ${quiz.question}\n\n`;
+    for (let i = 0; i < 3; i++) text += `${labels[i]}: ${quiz.options[i]}\n`;
+    text += `\n⏳ Vous avez 15 secondes pour répondre !`;
+
+    await bot.sendMessage(chatId, text, { reply_markup: { inline_keyboard: buttons } });
+
+    // Timer 15s
+    setTimeout(() => {
+        if (currentQuiz === quiz) {
+            currentQuiz = null;
+            bot.sendMessage(chatId, "🕰️ Temps écoulé ! Personne n'a répondu. La prochaine question arrive bientôt.");
+        }
+    }, 15000);
+}
+
+// --- Gestion des clics boutons ---
+if (global.bot) {
+    global.bot.on('callback_query', async (query) => {
+        const chatId = query.message.chat.id;
+        const userId = query.from.id;
+        const username = query.from.first_name || query.from.username || "Utilisateur";
+
+        // Boutons du menu principal
+        if (query.data === "quiz_now") {
+            sendQuiz(global.bot, chatId);
+            await global.bot.answerCallbackQuery(query.id);
+            return;
+        }
+        if (query.data === "quiz_auto_on") {
+            if (quizAutoInterval) return global.bot.answerCallbackQuery(query.id, { text: "⚡ Quiz auto déjà activé !" });
+            quizAutoInterval = setInterval(() => sendQuiz(global.bot, chatId), 30000);
+            await global.bot.answerCallbackQuery(query.id, { text: "⚡ Quiz auto activé !" });
+            return;
+        }
+        if (query.data === "quiz_auto_off") {
+            clearInterval(quizAutoInterval);
+            quizAutoInterval = null;
+            await global.bot.answerCallbackQuery(query.id, { text: "⏹ Quiz auto désactivé !" });
+            return;
+        }
+
+        // Réponse A/B/C
+        if (query.data.startsWith("quiz_answer_") && currentQuiz) {
+            const selectedLabel = query.data.split("quiz_answer_")[1];
+            const index = ['A','B','C'].indexOf(selectedLabel);
+            const selected = currentQuiz.options[index];
+
+            if (!scores[userId]) scores[userId] = { name: username, points: 0 };
+
+            let replyText = "";
+            if (selected === currentQuiz.answer) {
+                scores[userId].points += 1;
+                replyText = `✅ Correct ! ${username} gagne 1 point. Total: ${scores[userId].points}`;
+            } else {
+                replyText = `❌ Faux ! La bonne réponse était : ${currentQuiz.answer}. ${username} a ${scores[userId].points} point(s).`;
+            }
+
+            currentQuiz = null;
+            await global.bot.sendMessage(chatId, replyText);
+            await global.bot.answerCallbackQuery(query.id);
+        }
+    });
+      }
