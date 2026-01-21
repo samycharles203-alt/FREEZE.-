@@ -1,0 +1,55 @@
+const fs = require("fs-extra");
+const path = require("path");
+
+module.exports = {
+  nix: {
+    name: "restart",
+    prefix: false,
+    role: 2, // OWNER / ADMIN
+    category: "owner",
+    aliases: ["reboot"],
+    author: "NTKhang • NIX port by FREEZE.IO",
+    version: "1.1"
+  },
+
+  langs: {
+    vi: {
+      restarting: "🔄 | Đang khởi động lại bot..."
+    },
+    en: {
+      restarting: "🔄 | Restarting bot..."
+    },
+    fr: {
+      restarting: "🔄 | Redémarrage du bot en cours..."
+    }
+  },
+
+  onLoad({ message }) {
+    const filePath = path.join(__dirname, "tmp", "restart.txt");
+
+    if (fs.existsSync(filePath)) {
+      const [chatId, time] = fs.readFileSync(filePath, "utf-8").split(" ");
+      const seconds = ((Date.now() - Number(time)) / 1000).toFixed(1);
+
+      message.reply(
+        `✅ | Bot redémarré avec succès\n⏰ | Temps : ${seconds}s`,
+        { chat_id: chatId }
+      );
+
+      fs.unlinkSync(filePath);
+    }
+  },
+
+  async onStart({ message, getLang }) {
+    const filePath = path.join(__dirname, "tmp", "restart.txt");
+
+    fs.ensureDirSync(path.dirname(filePath));
+    fs.writeFileSync(filePath, `${message.chat.id} ${Date.now()}`);
+
+    await message.reply(
+      getLang("restarting") || "🔄 | Restarting bot..."
+    );
+
+    process.exit(2);
+  }
+};
